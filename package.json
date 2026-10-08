@@ -1,0 +1,52 @@
+{
+  "name": "lightweight-evm-indexer",
+  "version": "0.1.0",
+  "description": "A lightweight, production-grade EVM event indexer: cursor-based eth_getLogs ingestion, exactly-once commits, reorg rewind, and websocket-triggered polling that cuts RPC usage by ~90%.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/db/schema.sql"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/db/schema.sql dist/db/schema.sql",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src test examples",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "example:erc20": "tsx examples/erc20-transfers/index.ts"
+  },
+  "keywords": [
+    "ethereum",
+    "evm",
+    "indexer",
+    "eth_getLogs",
+    "reorg",
+    "websocket",
+    "viem",
+    "postgres"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "pg": "^8.16.0",
+    "viem": "^2.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.15.0",
+    "oxlint": "^1.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
