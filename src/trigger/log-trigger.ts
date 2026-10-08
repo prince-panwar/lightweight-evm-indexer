@@ -7,7 +7,7 @@ import { LogStream, type RpcLog, type SocketFactory } from './log-stream.js';
 
 /** How a chain is being driven right now. */
 export type TriggerMode =
-  /** No websocket configured: poll every interval. */
+  /** No websocket configured (or paused as too busy): poll every interval. */
   | 'off'
   /** Subscribed: ingest on notifications plus the periodic sweep. */
   | 'live'
@@ -30,7 +30,27 @@ interface ChainTrigger {
    * be dismissed as foreign just because the watched set has not learned it.
    */
   learned: Set<string>;
+  /** Notifications (all, accepted or not) in the current one-minute window. */
+  windowStart: number;
+  windowCount: number;
 }
+
+export interface TriggerLimits {
+  /**
+   * Above this many notifications a minute a chain's subscription is dropped
+   * and the chain polls instead. Providers bill every notification; for a
+   * firehose (a busy token's Transfer stream) a socket costs far more than
+   * polling every couple of seconds, and is never idle anyway.
+   */
+  maxNotificationsPerMinute: number;
+  /** How long a too-busy chain polls before the socket is tried again. */
+  busyCooldownMs: number;
+}
+
+export const DEFAULT_TRIGGER_LIMITS: TriggerLimits = {
+  maxNotificationsPerMinute: 600,
+  busyCooldownMs: 30 * 60_000,
+};
 
 /** Bounded: ingestion adds these to the watched set within seconds anyway. */
 const MAX_LEARNED = 1_000;
@@ -52,6 +72,8 @@ const MAX_LEARNED = 1_000;
 export class LogTrigger {
   private readonly triggers = new Map<number, ChainTrigger>();
   private readonly enabled = new Set<number>();
+  /** Chains paused as too busy for a socket, until this time (ms). */
+  private readonly busyUntil = new Map<number, number>();
 
   constructor(
     private readonly chains: Map<number, ChainConfig>,
@@ -62,6 +84,7 @@ export class LogTrigger {
     private readonly usage: RpcUsage,
     private readonly log: Logger,
     private readonly socketFactory?: SocketFactory,
+    private readonly limits: TriggerLimits = DEFAULT_TRIGGER_LIMITS,
   ) {
     for (const chain of chains.values()) if (chain.websocket && topics.length > 0) this.enabled.add(chain.chainId);
   }
@@ -69,6 +92,12 @@ export class LogTrigger {
   /** The chain's mode, opening its stream on first use. */
   mode(chainId: number): TriggerMode {
     if (!this.enabled.has(chainId)) return 'off';
+    const busy = this.busyUntil.get(chainId);
+    if (busy !== undefined) {
+      if (Date.now() < busy) return 'off';
+      this.busyUntil.delete(chainId);
+      this.log.info(`chain ${chainId}: retrying the websocket after the busy cooldown`);
+    }
     const trigger = this.triggers.get(chainId) ?? this.open(chainId);
     if (!trigger) return 'off';
     return trigger.live ? 'live' : 'down';
@@ -119,6 +148,8 @@ export class LogTrigger {
       catchUp: false,
       notices: 0,
       learned: new Set(),
+      windowStart: Date.now(),
+      windowCount: 0,
       stream: new LogStream({
         chainId,
         url, // never logged: provider URLs carry API keys
@@ -141,13 +172,38 @@ export class LogTrigger {
           if (live) trigger.catchUp = true;
           this.log.info(`chain ${chainId}: websocket ${live ? 'subscribed' : 'down, polling meanwhile'}`);
         },
-        onUsage: (kind) => this.usage.record(chainId, kind === 'notification' ? 'ws_notification' : `ws_${kind}`),
+        onUsage: (kind) => {
+          this.usage.record(chainId, kind === 'notification' ? 'ws_notification' : `ws_${kind}`);
+          if (kind === 'notification') this.countNotification(chainId, trigger);
+        },
       }),
     };
 
     this.triggers.set(chainId, trigger);
     trigger.stream.start();
     return trigger;
+  }
+
+  /** Rate guard: a chain that floods the socket goes back to polling for a while. */
+  private countNotification(chainId: number, trigger: ChainTrigger): void {
+    const now = Date.now();
+    if (now - trigger.windowStart >= 60_000) {
+      trigger.windowStart = now;
+      trigger.windowCount = 0;
+    }
+    if (++trigger.windowCount <= this.limits.maxNotificationsPerMinute) return;
+
+    this.log.warn(
+      `chain ${chainId}: over ${this.limits.maxNotificationsPerMinute} notifications/min; a socket costs more ` +
+        `than polling here, so polling for ${Math.round(this.limits.busyCooldownMs / 60_000)} min`,
+    );
+    this.busyUntil.set(chainId, now + this.limits.busyCooldownMs);
+    // Stop after this callback returns: tearing the socket down from inside
+    // its own message handler is asking for trouble.
+    queueMicrotask(() => {
+      trigger.stream.stop();
+      if (this.triggers.get(chainId) === trigger) this.triggers.delete(chainId);
+    });
   }
 
   /** Decode the notification and apply the plugin's own trust and discovery rules. */

@@ -11,7 +11,7 @@ import { WatchSet } from './indexer/watch-set.js';
 import { consoleLogger } from './logger.js';
 import { Runner, type RunnerTiming } from './runner.js';
 import type { SocketFactory } from './trigger/log-stream.js';
-import { LogTrigger } from './trigger/log-trigger.js';
+import { DEFAULT_TRIGGER_LIMITS, LogTrigger } from './trigger/log-trigger.js';
 import type { ChainConfig, DecodedEvent, IndexerPlugin, Logger } from './types.js';
 
 export interface IndexerOptions {
@@ -36,6 +36,12 @@ export interface IndexerOptions {
   /** Run the engine's schema migration on start. Default true. */
   migrate?: boolean;
   logger?: Logger;
+  /**
+   * Websocket rate guard: above this many notifications a minute a chain
+   * polls instead for `websocketBusyCooldownMs`. Defaults 600 and 30 min.
+   */
+  websocketMaxNotificationsPerMinute?: number;
+  websocketBusyCooldownMs?: number;
   /** Called after each committed batch with the newly ingested events (e.g. publish live updates). */
   onCommitted?: (chainId: number, events: DecodedEvent[]) => void;
   /** Test seams. */
@@ -89,6 +95,11 @@ export function createIndexer(options: IndexerOptions): RunningIndexer {
     chain.usage,
     log,
     options.socketFactory,
+    {
+      maxNotificationsPerMinute:
+        options.websocketMaxNotificationsPerMinute ?? DEFAULT_TRIGGER_LIMITS.maxNotificationsPerMinute,
+      busyCooldownMs: options.websocketBusyCooldownMs ?? DEFAULT_TRIGGER_LIMITS.busyCooldownMs,
+    },
   );
   const timing: RunnerTiming = {
     pollMs: options.pollMs ?? 2_000,
