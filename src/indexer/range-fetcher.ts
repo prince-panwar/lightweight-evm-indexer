@@ -40,9 +40,18 @@ export class RangeFetcher {
     this.topicSelectors = decoder.selectors(new Set([...all].filter((n) => !scoped.has(n))));
   }
 
-  /** The topic0 values a websocket subscription should listen for (phase-1 events). */
-  triggerTopics(): Hex[] {
-    return this.topicSelectors;
+  /**
+   * What a websocket subscription listens for, and which event names it can
+   * therefore announce: every event when the plugin gives a fixed address
+   * list to filter by, otherwise the phase-1 (topic-filtered) events only.
+   */
+  subscription(): { topics: Hex[]; eventNames: Set<string> } {
+    const scoped = new Set(this.plugin.addressScopedEvents ?? []);
+    const names = this.plugin.events.map((e) => e.name);
+    if (this.plugin.subscriptionAddresses) {
+      return { topics: [...this.topicSelectors, ...this.scopedSelectors], eventNames: new Set(names) };
+    }
+    return { topics: this.topicSelectors, eventNames: new Set(names.filter((n) => !scoped.has(n))) };
   }
 
   async fetchRange(chainId: number, fromBlock: bigint, toBlock: bigint): Promise<DecodedEvent[]> {

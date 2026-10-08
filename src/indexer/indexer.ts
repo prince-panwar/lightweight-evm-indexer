@@ -19,7 +19,7 @@ export interface RangeSummary {
   fromBlock: bigint;
   toBlock: bigint;
   events: number;
-  /** Events of the kinds the websocket subscribes to (non address-scoped). */
+  /** Events of the kinds the websocket subscription can announce. */
   triggerEvents: number;
   reorgedTo?: bigint;
   /**
@@ -46,6 +46,7 @@ export class Indexer {
     private readonly plugin: IndexerPlugin,
     private readonly reorgDepth: number,
     private readonly log: Logger,
+    private readonly announced: ReadonlySet<string>,
     private readonly onCommitted?: (chainId: number, events: DecodedEvent[]) => void,
   ) {}
 
@@ -94,7 +95,6 @@ export class Indexer {
 
   private async ingest(chainId: number, range: LogRange): Promise<RangeSummary> {
     const events = await this.fetcher.fetchRange(chainId, range.fromBlock, range.toBlock);
-    const scoped = new Set(this.plugin.addressScopedEvents ?? []);
 
     for (const batch of batchByBlock(events, range, MAX_EVENTS_PER_TX)) {
       const toHash = await this.chain.getBlockHash(chainId, batch.toBlock);
@@ -122,7 +122,7 @@ export class Indexer {
       fromBlock: range.fromBlock,
       toBlock: range.toBlock,
       events: events.length,
-      triggerEvents: events.filter((e) => !scoped.has(e.eventName)).length,
+      triggerEvents: events.filter((e) => this.announced.has(e.eventName)).length,
     };
   }
 

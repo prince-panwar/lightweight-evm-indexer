@@ -123,6 +123,7 @@ export class LogTrigger {
         chainId,
         url, // never logged: provider URLs carry API keys
         topics: this.topics,
+        addresses: this.plugin.subscriptionAddresses?.(chainId),
         socketFactory: this.socketFactory,
         log: this.log,
         onLog: (raw) => {

@@ -65,14 +65,27 @@ export function createIndexer(options: IndexerOptions): RunningIndexer {
   const watched = new WatchSet(pool, options.plugin);
   const fetcher = new RangeFetcher(chain, decoder, watched, options.plugin);
   const reorg = new ReorgHandler(pool, chain, cursor, watched, options.plugin, reorgDepth, log);
-  const indexer = new Indexer(pool, chain, cursor, sizer, fetcher, reorg, options.plugin, reorgDepth, log, options.onCommitted);
+  const subscription = fetcher.subscription();
+  const indexer = new Indexer(
+    pool,
+    chain,
+    cursor,
+    sizer,
+    fetcher,
+    reorg,
+    options.plugin,
+    reorgDepth,
+    log,
+    subscription.eventNames,
+    options.onCommitted,
+  );
   const leader = new LeaderLock(options.databaseUrl, options.leaderLockKey ?? 7_312_001n, log);
   const trigger = new LogTrigger(
     chains,
     decoder,
     watched,
     options.plugin,
-    fetcher.triggerTopics(),
+    subscription.topics,
     chain.usage,
     log,
     options.socketFactory,

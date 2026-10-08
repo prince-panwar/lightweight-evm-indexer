@@ -77,6 +77,14 @@ export interface IndexerPlugin {
    */
   addressScopedEvents?: string[];
   /**
+   * A FIXED address list to filter the websocket subscription by. With it,
+   * the socket subscribes to every event kind from those addresses (address-
+   * scoped ones included); without it, it subscribes to the topic-filtered
+   * events from anyone. Use it when your contracts are known up front; leave
+   * it out for factory-style discovery.
+   */
+  subscriptionAddresses?(chainId: number): Address[];
+  /**
    * Addresses known when a chain starts, plus any your own tables say were
    * discovered earlier (they are lost on restart otherwise). Called once per
    * chain at start, and again after a reorg rewind.

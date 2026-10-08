@@ -29,8 +29,10 @@ export interface RpcLog {
 export interface LogStreamOptions {
   chainId: number;
   url: string;
-  /** Topic-0 alternatives to subscribe to (any of). No address filter. */
+  /** Topic-0 alternatives to subscribe to (any of). */
   topics: Hex[];
+  /** Optional address filter (any of). */
+  addresses?: Hex[];
   /** A notified log, raw RPC form (hex quantities). Called once per log. */
   onLog: (log: RpcLog) => void;
   /** Subscribed and confirmed (true), or not usable right now (false). */
@@ -130,7 +132,13 @@ export class LogStream {
           jsonrpc: '2.0',
           id: SUBSCRIBE_ID,
           method: 'eth_subscribe',
-          params: ['logs', { topics: [this.o.topics] }],
+          params: [
+            'logs',
+            {
+              ...(this.o.addresses && this.o.addresses.length > 0 ? { address: this.o.addresses } : {}),
+              topics: [this.o.topics],
+            },
+          ],
         }),
       );
     };
